@@ -1,14 +1,33 @@
 import sys
 import argparse
 import logging
-from src.ui import SyncAppUI
-from src.config import ConfigManager
-from src.engine import SyncEngine
-from src.icloud_api import ICloudPhotosAPI
-from src.synology_api import SynologyPhotosAPI
-from src.database import SyncDatabase
+import os
+
+_STREAM_HANDLES = []
+
+
+def _ensure_standard_streams() -> None:
+    # In PyInstaller --windowed mode, stdio can be None; some deps call .isatty().
+    if sys.stdin is None:
+        handle = open(os.devnull, "r", encoding="utf-8", errors="ignore")
+        _STREAM_HANDLES.append(handle)
+        sys.stdin = handle
+    if sys.stdout is None:
+        handle = open(os.devnull, "w", encoding="utf-8", errors="ignore")
+        _STREAM_HANDLES.append(handle)
+        sys.stdout = handle
+    if sys.stderr is None:
+        handle = open(os.devnull, "w", encoding="utf-8", errors="ignore")
+        _STREAM_HANDLES.append(handle)
+        sys.stderr = handle
 
 def run_cli():
+    from src.config import ConfigManager
+    from src.engine import SyncEngine
+    from src.icloud_api import ICloudPhotosAPI
+    from src.synology_api import SynologyPhotosAPI
+    from src.database import SyncDatabase
+
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
     logging.info("Running in CLI mode...")
     
@@ -47,6 +66,8 @@ def run_cli():
     logging.info("Sync completed.")
 
 def main():
+    _ensure_standard_streams()
+
     parser = argparse.ArgumentParser(description="iCloud to Synology Sync")
     parser.add_argument("--cli", action="store_true", help="Run a single sync in CLI mode")
     args = parser.parse_args()
@@ -54,6 +75,8 @@ def main():
     if args.cli:
         run_cli()
     else:
+        from src.ui import SyncAppUI
+
         # Check if we are in a headless environment
         try:
             app = SyncAppUI()

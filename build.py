@@ -5,8 +5,9 @@ import sys
 def build():
     try:
         import customtkinter
+        import fido2
     except ImportError:
-        print("Error: customtkinter is not installed. Please install it first.")
+        print("Error: required build dependencies are not installed. Please install requirements first.")
         sys.exit(1)
 
     # Get the path to customtkinter
@@ -15,12 +16,17 @@ def build():
     # On Windows, os.pathsep is ';', on Linux/macOS it's ':'
     # PyInstaller add-data format: SOURCE;DEST or SOURCE:DEST
     add_data_path = f"{ctk_path}{os.pathsep}customtkinter"
+    fido2_psl_path = os.path.join(os.path.dirname(fido2.__file__), "public_suffix_list.dat")
+    fido2_add_data_path = f"{fido2_psl_path}{os.pathsep}fido2"
 
     command = [
-        "pyinstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--onefile",
         "--windowed",
         f"--add-data={add_data_path}",
+        f"--add-data={fido2_add_data_path}",
         "--name", "iCloudSynoSync",
         "src/main.py"
     ]
