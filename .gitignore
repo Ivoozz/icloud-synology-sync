@@ -1,0 +1,11 @@
+.worktrees/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.db
+config.json
+dist/
+build/
+*.spec
