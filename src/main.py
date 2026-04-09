@@ -22,6 +22,7 @@ def _ensure_standard_streams() -> None:
         sys.stderr = handle
 
 def run_cli():
+    from src.version import APP_NAME, APP_VERSION
     from src.config import ConfigManager
     from src.engine import SyncEngine
     from src.icloud_api import ICloudPhotosAPI
@@ -29,7 +30,7 @@ def run_cli():
     from src.database import SyncDatabase
 
     logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-    logging.info("Running in CLI mode...")
+    logging.info(f"Running in CLI mode for {APP_NAME} {APP_VERSION}...")
     
     config_manager = ConfigManager()
     data = config_manager.data
@@ -59,7 +60,7 @@ def run_cli():
         enable_nas_to_icloud_deletion=data.get("enable_nas_to_icloud_deletion", False)
     )
 
-    photos = icloud_api.list_photos()
+    photos = icloud_api.list_photo_records()
     logging.info(f"Found {len(photos)} photos in iCloud.")
     
     engine.reconcile(photos)
@@ -68,8 +69,11 @@ def run_cli():
 def main():
     _ensure_standard_streams()
 
-    parser = argparse.ArgumentParser(description="iCloud to Synology Sync")
+    from src.version import APP_NAME, APP_VERSION
+
+    parser = argparse.ArgumentParser(description=f"{APP_NAME} {APP_VERSION}")
     parser.add_argument("--cli", action="store_true", help="Run a single sync in CLI mode")
+    parser.add_argument("--version", action="version", version=f"{APP_NAME} {APP_VERSION}")
     args = parser.parse_args()
 
     if args.cli:

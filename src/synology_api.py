@@ -41,20 +41,43 @@ class SynologyPhotosAPI:
         self.password = password
         self.sid = None
 
+    def _request(self, method: str, path: str, *, params=None, data=None, files=None, timeout=10):
+        url = f"{self.base_url}{path}"
+        request_kwargs = {"params": params, "data": data, "files": files, "timeout": timeout}
+        request_kwargs = {key: value for key, value in request_kwargs.items() if value is not None}
+        return requests.request(method, url, **request_kwargs)
+
+    def _api_params(self, api, version, method, **extra):
+        params = {
+            "api": api,
+            "version": str(version),
+            "method": method,
+            "_sid": self.sid,
+        }
+        params.update(extra)
+        return params
+
+    def _ensure_login(self) -> bool:
+        if self.sid:
+            return True
+        return self.login()
+
     def login(self) -> bool:
         """Authenticates with the Synology DSM to obtain an SID."""
-        url = f"{self.base_url}/webapi/auth.cgi"
-        params = {
-            "api": "SYNO.API.Auth",
-            "version": "3",
-            "method": "login",
-            "account": self.username,
-            "passwd": self.password,
-            "session": "Photos",
-            "format": "sid"
-        }
         try:
-            response = requests.get(url, params=params, timeout=10)
+            response = self._request(
+                "GET",
+                "/webapi/auth.cgi",
+                params={
+                    "api": "SYNO.API.Auth",
+                    "version": "3",
+                    "method": "login",
+                    "account": self.username,
+                    "passwd": self.password,
+                    "session": "Photos",
+                    "format": "sid",
+                },
+            )
             response.raise_for_status()
             data = response.json()
             if data.get("success"):
@@ -69,15 +92,14 @@ class SynologyPhotosAPI:
 
     def ping(self) -> bool:
         """Checks connectivity to the Synology API."""
-        url = f"{self.base_url}/webapi/entry.cgi"
-        params = {
-            "api": "SYNO.Foto.Info",
-            "version": "1",
-            "method": "get",
-            "_sid": self.sid
-        }
         try:
-            response = requests.get(url, params=params, timeout=10)
+            if not self._ensure_login():
+                return False
+            response = self._request(
+                "GET",
+                "/webapi/entry.cgi",
+                params=self._api_params("SYNO.Foto.Info", 1, "get"),
+            )
             response.raise_for_status()
             data = response.json()
             return data.get("success", False)
@@ -87,16 +109,12 @@ class SynologyPhotosAPI:
 
     def upload_stream(self, generator: Generator[bytes, None, None], filename: str) -> bool:
         """Uploads a photo stream to Synology Photos."""
-        if not self.sid:
-            if not self.login():
-                return False
+        if not self._ensure_login():
+            return False
 
         url = f"{self.base_url}/webapi/entry.cgi"
-        # Synology Photos upload typically uses SYNO.Foto.Upload.Item
-        # and requires multipart/form-data.
-        # We wrap the generator in a file-like object for requests.
         gen_file = GeneratorFile(generator)
-        
+
         files = {
             'file': (filename, gen_file, 'image/jpeg')
         }
@@ -105,34 +123,41 @@ class SynologyPhotosAPI:
             'version': '1',
             'method': 'upload',
             '_sid': self.sid,
-            'dest_folder_path': '/Photos/MobileBackup/iCloudSync' # Placeholder path
+            'dest_folder_path': '/Photos/MobileBackup/iCloudSync'
         }
-        
+
         try:
             response = requests.post(url, data=data, files=files, timeout=60)
+            if response.status_code == 401:
+                self.sid = None
+                if not self.login():
+                    return False
+                data['_sid'] = self.sid
+                response = requests.post(url, data=data, files=files, timeout=60)
             response.raise_for_status()
-            return response.json().get("success", False)
+            result = response.json()
+            if not result.get("success", False):
+                logger.error(f"Synology upload rejected for {filename}: {result}")
+                return False
+            return True
         except Exception as e:
             logger.error(f"Failed to upload {filename} via stream: {e}")
             return False
 
     def list_photos(self):
         """Lists photos from the library."""
-        url = f"{self.base_url}/webapi/entry.cgi"
-        params = {
-            "api": "SYNO.Foto.Browse.Item",
-            "version": "1",
-            "method": "list",
-            "offset": 0,
-            "limit": 500,
-            "_sid": self.sid
-        }
         try:
-            response = requests.get(url, params=params, timeout=10)
+            if not self._ensure_login():
+                return []
+            response = self._request(
+                "GET",
+                "/webapi/entry.cgi",
+                params=self._api_params("SYNO.Foto.Browse.Item", 1, "list", offset=0, limit=500),
+            )
             response.raise_for_status()
             data = response.json()
             if data.get("success"):
-                return data["data"]["list"]
+                return data.get("data", {}).get("list", [])
             return []
         except Exception as e:
             logger.error(f"Failed to list photos: {e}")
@@ -140,38 +165,42 @@ class SynologyPhotosAPI:
 
     def delete_file(self, syno_id: str) -> bool:
         """Deletes a file by its Synology ID."""
-        url = f"{self.base_url}/webapi/entry.cgi"
-        params = {
-            "api": "SYNO.Foto.Browse.Item",
-            "version": "1",
-            "method": "delete",
-            "id": [syno_id],
-            "_sid": self.sid
-        }
         try:
-            response = requests.get(url, params=params, timeout=10)
+            if not self._ensure_login():
+                return False
+            response = self._request(
+                "GET",
+                "/webapi/entry.cgi",
+                params=self._api_params("SYNO.Foto.Browse.Item", 1, "delete", id=[syno_id]),
+            )
             response.raise_for_status()
             data = response.json()
-            return data.get("success", False)
+            success = data.get("success", False)
+            if not success:
+                logger.error(f"Synology delete rejected for {syno_id}: {data}")
+            return success
         except Exception as e:
             logger.error(f"Failed to delete file {syno_id}: {e}")
             return False
 
     def file_exists(self, syno_id: str) -> bool:
         """Checks if a file exists on the NAS."""
-        url = f"{self.base_url}/webapi/entry.cgi"
-        params = {
-            "api": "SYNO.Foto.Browse.Item",
-            "version": "1",
-            "method": "get",
-            "id": syno_id,
-            "_sid": self.sid
-        }
         try:
-            response = requests.get(url, params=params, timeout=10)
+            if not self._ensure_login():
+                return False
+            response = self._request(
+                "GET",
+                "/webapi/entry.cgi",
+                params=self._api_params("SYNO.Foto.Browse.Item", 1, "get", id=syno_id),
+            )
             response.raise_for_status()
             data = response.json()
             return data.get("success", False)
+        except requests.HTTPError as e:
+            if getattr(e.response, "status_code", None) == 404:
+                return False
+            logger.error(f"Error checking file existence for {syno_id}: {e}")
+            return False
         except Exception as e:
             logger.error(f"Error checking file existence for {syno_id}: {e}")
             return False

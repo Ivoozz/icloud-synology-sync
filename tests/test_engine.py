@@ -1,4 +1,5 @@
 from src.engine import SyncEngine
+from src.database import SyncDatabase
 from unittest.mock import MagicMock, patch
 import pytest
 
@@ -11,9 +12,10 @@ def test_streaming_transfer():
     mock_response.iter_content.return_value = [b"chunk1", b"chunk2"]
     
     filename = "test.jpg"
-    success = engine._stream_file(mock_response, filename)
+    success, digest = engine._stream_file(mock_response, filename)
     
     assert success is True
+    assert digest
     # Verify syno_api.upload_stream was called with filename
     args, kwargs = syno_api.upload_stream.call_args
     assert args[1] == filename
@@ -46,8 +48,9 @@ def test_streaming_transfer_synology_failure():
     engine = SyncEngine(MagicMock(), syno_api, MagicMock())
     mock_response = MagicMock()
     
-    success = engine._stream_file(mock_response, "test.jpg")
+    success, digest = engine._stream_file(mock_response, "test.jpg")
     assert success is False
+    assert digest == ""
 
 def test_streaming_transfer_icloud_failure():
     syno_api = MagicMock()
@@ -62,8 +65,9 @@ def test_streaming_transfer_icloud_failure():
     mock_response.iter_content.side_effect = Exception("Download failed")
     
     # In this case _stream_file should return False because of the exception in generator
-    success = engine._stream_file(mock_response, "test.jpg")
+    success, digest = engine._stream_file(mock_response, "test.jpg")
     assert success is False
+    assert digest == ""
 
 def test_reconcile_deletion_from_icloud():
     db = MagicMock()
@@ -105,7 +109,7 @@ def test_reconcile_nas_deletion_without_icloud_sync():
     engine.reconcile(current_icloud_ids=["id1"])
     
     icloud.delete_photo.assert_not_called()
-    db.delete_entry.assert_called_with("id1")
+    db.delete_entry.assert_not_called()
 
 def test_reconcile_additions():
     db = MagicMock()
@@ -130,6 +134,7 @@ def test_reconcile_additions():
     args, _ = db.upsert_sync_entry.call_args
     assert args[0] == "new_id"
     assert args[1] == "new_id.jpg"
+    assert args[2]
 
 def test_reconcile_heartbeat_failure():
     db = MagicMock()
@@ -150,4 +155,96 @@ def test_reconcile_heartbeat_failure():
     icloud.delete_photo.assert_not_called()
     db.delete_entry.assert_not_called()
     icloud.download_photo.assert_not_called()
+
+def test_reconcile_accepts_metadata_records():
+    db = MagicMock()
+    icloud = MagicMock()
+    syno = MagicMock()
+    db.get_all_entries.return_value = []
+    icloud.download_photo.return_value = MagicMock()
+    syno.upload_stream.return_value = True
+
+    engine = SyncEngine(icloud, syno, db)
+    engine.reconcile([{"id": "id1", "filename": "photo.heic"}])
+
+    icloud.download_photo.assert_called_with("id1")
+    db.upsert_sync_entry.assert_called_once()
+    assert db.upsert_sync_entry.call_args.args[1] == "photo.heic"
+
+def test_reconcile_queue_processing_with_progress_callback():
+    db = SyncDatabase(":memory:")
+    icloud = MagicMock()
+    syno = MagicMock()
+    syno.ping.return_value = True
+
+    mock_response = MagicMock()
+    mock_response.iter_content.return_value = [b"chunk"]
+    icloud.download_photo.return_value = mock_response
+
+    def exhaust_and_upload(gen, filename):
+        list(gen)
+        return True
+
+    syno.upload_stream.side_effect = exhaust_and_upload
+
+    progress_events = []
+    engine = SyncEngine(
+        icloud,
+        syno,
+        db,
+        worker_count=2,
+        max_retries=2,
+        queue_batch_size=10,
+        progress_callback=progress_events.append,
+    )
+
+    engine.reconcile([
+        {"id": "id1", "filename": "a.jpg"},
+        {"id": "id2", "filename": "b.jpg"},
+    ])
+
+    assert db.get_entry_by_icloud_id("id1") is not None
+    assert db.get_entry_by_icloud_id("id2") is not None
+    assert any(event.get("stage") == "batch_complete" for event in progress_events)
+
+def test_reconcile_honors_pause_callback():
+    db = SyncDatabase(":memory:")
+    icloud = MagicMock()
+    syno = MagicMock()
+    syno.ping.return_value = True
+
+    mock_response = MagicMock()
+    mock_response.iter_content.return_value = [b"chunk"]
+    icloud.download_photo.return_value = mock_response
+
+    def exhaust_and_upload(gen, filename):
+        list(gen)
+        return True
+
+    syno.upload_stream.side_effect = exhaust_and_upload
+
+    progress_events = []
+    pause_state = {"calls": 0}
+
+    def should_pause():
+        if pause_state["calls"] == 0:
+            pause_state["calls"] += 1
+            return True
+        return False
+
+    engine = SyncEngine(
+        icloud,
+        syno,
+        db,
+        worker_count=1,
+        progress_callback=progress_events.append,
+        should_pause=should_pause,
+    )
+
+    engine.reconcile([{"id": "id1", "filename": "a.jpg"}])
+
+    assert db.get_entry_by_icloud_id("id1") is not None
+    stages = [event.get("stage") for event in progress_events]
+    assert "paused" in stages
+    assert "resumed" in stages
 

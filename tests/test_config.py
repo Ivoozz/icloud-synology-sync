@@ -66,3 +66,20 @@ def test_config_reload_persistence(config_file):
     cm2 = ConfigManager(config_path=config_file)
     assert cm2.data["nas_ip"] == "10.0.0.1"
     assert cm2.data["sync_interval_minutes"] == 60
+
+def test_config_migrates_version_field(config_file):
+    config_file.write_text(json.dumps({
+        "nas_ip": "10.0.0.5",
+        "enable_nas_to_icloud_deletion": True
+    }))
+
+    cm = ConfigManager(config_path=config_file)
+    assert cm.data["config_version"] == ConfigManager.CURRENT_CONFIG_VERSION
+    assert cm.data["nas_ip"] == "10.0.0.5"
+    assert cm.data["enable_nas_to_icloud_deletion"] is True
+
+def test_config_contains_large_sync_defaults(config_file):
+    cm = ConfigManager(config_path=config_file)
+    assert cm.data["sync_worker_count"] == 4
+    assert cm.data["max_upload_retries"] == 3
+    assert cm.data["queue_batch_size"] == 50

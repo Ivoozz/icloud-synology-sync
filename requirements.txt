@@ -3,3 +3,6 @@ customtkinter
 pyicloud
 requests
 pyinstaller
+fido2
+pystray
+pillow

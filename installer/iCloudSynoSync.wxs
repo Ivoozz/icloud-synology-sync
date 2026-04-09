@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <?define ProductName = "iCloud to Synology Sync" ?>
+  <?define Manufacturer = "GitHub Copilot" ?>
+  <?define ProductVersion = "__PRODUCT_VERSION__" ?>
+
+  <Product
+    Id="*"
+    Name="$(var.ProductName)"
+    Language="1033"
+    Version="$(var.ProductVersion)"
+    Manufacturer="$(var.Manufacturer)"
+    UpgradeCode="{A4A7B3C9-8A4C-4D59-9A1B-5D4E8C5B7E21}">
+
+    <Package InstallerVersion="500" Compressed="yes" InstallScope="perUser" />
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="MainFeature" Title="$(var.ProductName)" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Product>
+
+  <Fragment>
+    <Directory Id="TARGETDIR" Name="SourceDir">
+      <Directory Id="LocalAppDataFolder">
+        <Directory Id="INSTALLFOLDER" Name="iCloud to Synology Sync" />
+      </Directory>
+
+      <Directory Id="ProgramMenuFolder">
+        <Directory Id="ApplicationProgramsFolder" Name="iCloud to Synology Sync" />
+      </Directory>
+
+      <Directory Id="DesktopFolder" Name="Desktop" />
+    </Directory>
+  </Fragment>
+
+  <Fragment>
+    <DirectoryRef Id="INSTALLFOLDER">
+      <Component Id="ApplicationComponent" Guid="{27B8C4F7-8B54-4F35-A56A-0D98B8E3F5A2}">
+        <Condition>NOT ALLUSERS</Condition>
+        <File Id="ApplicationExe" Source="__EXE_PATH__" />
+
+        <RegistryValue Root="HKCU" Key="Software\ICloudSynoSync" Name="InstallLocation" Value="[INSTALLFOLDER]" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKCU" Key="Software\ICloudSynoSync" Name="Version" Value="$(var.ProductVersion)" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\iCloudSynoSync.exe" Value="[INSTALLFOLDER]iCloudSynoSync.exe" Type="string" />
+        <RegistryValue Root="HKCU" Key="Software\Microsoft\Windows\CurrentVersion\App Paths\iCloudSynoSync.exe" Name="Path" Value="[INSTALLFOLDER]" Type="string" />
+        <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="DesktopFolder">
+      <Component Id="DesktopShortcutComponent" Guid="{C8D6B05B-89F9-49D5-B4B2-3A9A9A3C7D66}">
+        <Shortcut
+          Id="DesktopShortcut"
+          Name="iCloud to Synology Sync"
+          Target="[INSTALLFOLDER]iCloudSynoSync.exe"
+          Directory="DesktopFolder"
+          WorkingDirectory="INSTALLFOLDER"
+          Description="Synchronize iCloud Photos with Synology Photos" />
+
+        <RegistryValue Root="HKCU" Key="Software\ICloudSynoSync\DesktopShortcut" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="StartMenuShortcutComponent" Guid="{F2FD1B3C-4A93-4FBE-83A9-8C9E26C6B2FE}">
+        <Shortcut
+          Id="StartMenuShortcut"
+          Name="iCloud to Synology Sync"
+          Target="[INSTALLFOLDER]iCloudSynoSync.exe"
+          WorkingDirectory="INSTALLFOLDER"
+          Description="Synchronize iCloud Photos with Synology Photos" />
+
+        <RemoveFolder Id="RemoveApplicationProgramsFolder" Directory="ApplicationProgramsFolder" On="uninstall" />
+        <RegistryValue Root="HKCU" Key="Software\ICloudSynoSync\StartMenuShortcut" Name="Installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+
+    <ComponentGroup Id="ProductComponents">
+      <ComponentRef Id="ApplicationComponent" />
+      <ComponentRef Id="DesktopShortcutComponent" />
+      <ComponentRef Id="StartMenuShortcutComponent" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

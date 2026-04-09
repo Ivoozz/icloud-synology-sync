@@ -3,6 +3,8 @@ import os
 import sys
 
 def build():
+    from src.version import APP_NAME, APP_VERSION
+
     try:
         import customtkinter
         import fido2
@@ -31,7 +33,7 @@ def build():
         "src/main.py"
     ]
 
-    print(f"Building with command: {' '.join(command)}")
+    print(f"Building {APP_NAME} {APP_VERSION} with command: {' '.join(command)}")
     
     try:
         subprocess.run(command, check=True)
