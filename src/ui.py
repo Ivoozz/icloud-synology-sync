@@ -2,7 +2,7 @@ import customtkinter as ctk
 import threading
 import logging
 import sys
-from tkinter import messagebox
+from tkinter import messagebox, simpledialog
 from datetime import datetime
 from src.version import APP_NAME, APP_VERSION, build_about_text
 from src.config import ConfigManager
@@ -98,7 +98,7 @@ class SyncAppUI(ctk.CTk):
         self.nas_user = self._create_entry(connection_card, "NAS User", 2, placeholder="admin")
         self.nas_pass = self._create_entry(connection_card, "NAS Password", 3, show="*", placeholder="Stored securely")
         self.apple_id = self._create_entry(connection_card, "Apple ID", 4, placeholder="name@example.com")
-        self.apple_pass = self._create_entry(connection_card, "App-Specific Password", 5, show="*", placeholder="Stored securely")
+        self.apple_pass = self._create_entry(connection_card, "Apple Password", 5, show="*", placeholder="Stored securely")
 
         sync_card = ctk.CTkFrame(body, corner_radius=16)
         sync_card.grid(row=0, column=1, padx=(10, 20), pady=(20, 10), sticky="nsew")
@@ -446,7 +446,7 @@ class SyncAppUI(ctk.CTk):
         self.config_manager.data["nas_ip"] = self.nas_ip.get()
         self.config_manager.data["nas_user"] = self.nas_user.get()
         normalized_apple_id = ICloudPhotosAPI._normalize_apple_id(self.apple_id.get())
-        normalized_apple_password = ICloudPhotosAPI._normalize_app_password(self.apple_pass.get())
+        normalized_apple_password = ICloudPhotosAPI._normalize_password(self.apple_pass.get())
         self.config_manager.data["apple_id"] = normalized_apple_id
         try:
             self.config_manager.data["sync_interval_minutes"] = int(self.sync_interval.get())
@@ -493,14 +493,42 @@ class SyncAppUI(ctk.CTk):
         self._set_busy(True)
         threading.Thread(target=self._run_sync, daemon=True).start()
 
+    def _prompt_2fa_code(self):
+        result = {"code": None}
+        completed = threading.Event()
+
+        def _show_dialog():
+            result["code"] = simpledialog.askstring(
+                "Apple 2FA",
+                "Enter the 6-digit code from your trusted Apple device:",
+                parent=self,
+            )
+            completed.set()
+
+        self.after(0, _show_dialog)
+        completed.wait()
+        return result["code"]
+
     def _run_sync(self):
         try:
             logging.info("Starting sync process...")
             
             icloud_api = ICloudPhotosAPI(self.apple_id.get(), self.apple_pass.get())
             if not icloud_api.login():
-                logging.error("iCloud login failed.")
-                return
+                if icloud_api.requires_2fa:
+                    code = self._prompt_2fa_code()
+                    if not code:
+                        logging.error("iCloud login canceled: no 2FA code provided.")
+                        self.after(0, lambda: self._set_status("iCloud 2FA canceled", ok=False))
+                        return
+                    if not icloud_api.verify_2fa(code):
+                        logging.error("iCloud 2FA verification failed.")
+                        self.after(0, lambda: self._set_status("iCloud 2FA failed", ok=False))
+                        return
+                else:
+                    logging.error("iCloud login failed.")
+                    self.after(0, lambda: self._set_status("iCloud login failed", ok=False))
+                    return
 
             syno_api = SynologyPhotosAPI(self.nas_ip.get(), self.nas_user.get(), self.nas_pass.get())
             if not syno_api.login():

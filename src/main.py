@@ -45,8 +45,15 @@ def run_cli():
 
     icloud_api = ICloudPhotosAPI(data["apple_id"], apple_pass)
     if not icloud_api.login():
-        logging.error("iCloud login failed.")
-        sys.exit(1)
+        if icloud_api.requires_2fa:
+            print("Two-factor authentication required for iCloud.")
+            code = input("Enter the 2FA code from your Apple device: ").strip()
+            if not icloud_api.verify_2fa(code):
+                logging.error("iCloud 2FA verification failed.")
+                sys.exit(1)
+        else:
+            logging.error("iCloud login failed.")
+            sys.exit(1)
 
     syno_api = SynologyPhotosAPI(data["nas_ip"], data["nas_user"], nas_pass)
     if not syno_api.login():

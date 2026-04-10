@@ -26,11 +26,11 @@ class TestICloudPhotosAPI(unittest.TestCase):
 
         api = ICloudPhotosAPI(
             apple_id="  test@example.com  ",
-            password=" abcd-efgh ijkl-mnop "
+            password="  pass- word  "
         )
 
         self.assertTrue(api.login())
-        mock_pyicloud.assert_called_once_with("test@example.com", "abcdefghijklmnop")
+        mock_pyicloud.assert_called_once_with("test@example.com", "pass- word")
 
     @patch('src.icloud_api.PyiCloudService')
     def test_login_requires_2fa(self, mock_pyicloud):
@@ -39,6 +39,31 @@ class TestICloudPhotosAPI(unittest.TestCase):
         mock_pyicloud.return_value = mock_instance
         
         self.assertFalse(self.api.login())
+        self.assertTrue(self.api.requires_2fa)
+
+    @patch('src.icloud_api.PyiCloudService')
+    def test_verify_2fa_success(self, mock_pyicloud):
+        mock_instance = MagicMock()
+        mock_instance.requires_2fa = True
+        mock_instance.validate_2fa_code.return_value = True
+        mock_instance.is_trusted_session = False
+        mock_instance.trust_session.return_value = True
+        mock_pyicloud.return_value = mock_instance
+
+        self.assertFalse(self.api.login())
+        self.assertTrue(self.api.verify_2fa("123456"))
+        mock_instance.validate_2fa_code.assert_called_once_with("123456")
+
+    @patch('src.icloud_api.PyiCloudService')
+    def test_verify_2fa_failure(self, mock_pyicloud):
+        mock_instance = MagicMock()
+        mock_instance.requires_2fa = True
+        mock_instance.validate_2fa_code.return_value = False
+        mock_instance.is_trusted_session = True
+        mock_pyicloud.return_value = mock_instance
+
+        self.assertFalse(self.api.login())
+        self.assertFalse(self.api.verify_2fa("111111"))
 
     def test_list_photos_success(self):
         mock_api = MagicMock()

@@ -10,20 +10,18 @@ class ICloudPhotosAPI:
     """
     def __init__(self, apple_id: str, password: str):
         self.apple_id = self._normalize_apple_id(apple_id)
-        self.password = self._normalize_app_password(password)
+        self.password = self._normalize_password(password)
         self.api = None
+        self.requires_2fa = False
+        self.last_error = ""
 
     @staticmethod
     def _normalize_apple_id(apple_id: str) -> str:
         return (apple_id or "").strip()
 
     @staticmethod
-    def _normalize_app_password(password: str) -> str:
-        if not password:
-            return ""
-        # Apple app-specific passwords are often pasted with separators.
-        normalized = password.strip().replace(" ", "").replace("-", "")
-        return normalized.replace("–", "").replace("—", "")
+    def _normalize_password(password: str) -> str:
+        return (password or "").strip()
 
     def login(self) -> bool:
         """
@@ -31,21 +29,59 @@ class ICloudPhotosAPI:
         """
         try:
             self.api = PyiCloudService(self.apple_id, self.password)
+            self.requires_2fa = bool(getattr(self.api, "requires_2fa", False))
             if self.api.requires_2fa:
-                logger.warning("Two-factor authentication required. Manual login might be needed once.")
+                self.last_error = "Two-factor authentication required"
+                logger.warning("Two-factor authentication required.")
                 return False
+            self.last_error = ""
             return True
         except Exception as e:
             error_text = str(e)
+            self.last_error = error_text
             lowered = error_text.lower()
             if "password" in lowered or "invalid" in lowered or "authentication" in lowered:
                 logger.error(
-                    "iCloud login failed. Verify Apple ID and app-specific password. "
-                    "Tip: use a fresh app-specific password and paste it without spaces/hyphens. "
+                    "iCloud login failed. Verify Apple ID and password. "
+                    "If your account has 2FA enabled, complete the code verification when prompted. "
                     f"Details: {error_text}"
                 )
             else:
                 logger.error(f"iCloud login failed: {error_text}")
+            return False
+
+    def verify_2fa(self, code: str) -> bool:
+        """
+        Validates an Apple 2FA code and requests a trusted session.
+        """
+        if not self.api:
+            self.last_error = "No active iCloud session"
+            return False
+
+        entered_code = (code or "").strip()
+        if not entered_code:
+            self.last_error = "No 2FA code provided"
+            return False
+
+        try:
+            result = self.api.validate_2fa_code(entered_code)
+            if not result:
+                self.last_error = "Failed to validate 2FA code"
+                logger.error(self.last_error)
+                return False
+
+            if not self.api.is_trusted_session:
+                trust_result = self.api.trust_session()
+                if not trust_result:
+                    logger.warning("2FA code accepted, but trusted session request failed.")
+
+            self.requires_2fa = False
+            self.last_error = ""
+            logger.info("iCloud 2FA verification succeeded.")
+            return True
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"2FA verification failed: {self.last_error}")
             return False
 
     def _iter_photo_objects(self) -> Iterable[Any]:
