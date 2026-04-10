@@ -13,6 +13,7 @@ class ICloudPhotosAPI:
         self.password = self._normalize_password(password)
         self.api = None
         self.requires_2fa = False
+        self.requires_2sa = False
         self.last_error = ""
 
     @staticmethod
@@ -23,16 +24,25 @@ class ICloudPhotosAPI:
     def _normalize_password(password: str) -> str:
         return (password or "").strip()
 
+    @staticmethod
+    def _is_true(value: Any) -> bool:
+        return value is True
+
     def login(self) -> bool:
         """
         Authenticates with iCloud.
         """
         try:
             self.api = PyiCloudService(self.apple_id, self.password)
-            self.requires_2fa = bool(getattr(self.api, "requires_2fa", False))
-            if self.api.requires_2fa:
+            self.requires_2fa = self._is_true(getattr(self.api, "requires_2fa", False))
+            self.requires_2sa = self._is_true(getattr(self.api, "requires_2sa", False))
+            if self.requires_2fa:
                 self.last_error = "Two-factor authentication required"
                 logger.warning("Two-factor authentication required.")
+                return False
+            if self.requires_2sa:
+                self.last_error = "Two-step authentication required"
+                logger.warning("Two-step authentication required.")
                 return False
             self.last_error = ""
             return True
@@ -76,12 +86,92 @@ class ICloudPhotosAPI:
                     logger.warning("2FA code accepted, but trusted session request failed.")
 
             self.requires_2fa = False
+            self.requires_2sa = False
             self.last_error = ""
             logger.info("iCloud 2FA verification succeeded.")
             return True
         except Exception as e:
             self.last_error = str(e)
             logger.error(f"2FA verification failed: {self.last_error}")
+            return False
+
+    def get_2sa_trusted_devices(self) -> List[Dict[str, Any]]:
+        if not self.api:
+            return []
+        devices = getattr(self.api, "trusted_devices", None)
+        if not devices:
+            return []
+        if isinstance(devices, list):
+            return devices
+        return []
+
+    def send_2sa_verification_code(self, device_index: int = 0) -> bool:
+        """
+        Sends a 2SA verification code to the selected trusted device.
+        """
+        devices = self.get_2sa_trusted_devices()
+        if not devices:
+            self.last_error = "No trusted devices available for 2SA"
+            logger.error(self.last_error)
+            return False
+
+        if device_index < 0 or device_index >= len(devices):
+            self.last_error = "Invalid trusted device selection"
+            logger.error(self.last_error)
+            return False
+
+        try:
+            sent = self.api.send_verification_code(devices[device_index])
+            if not sent:
+                self.last_error = "Failed to send 2SA verification code"
+                logger.error(self.last_error)
+                return False
+            self.last_error = ""
+            return True
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"Failed to send 2SA verification code: {self.last_error}")
+            return False
+
+    def verify_2sa(self, code: str, device_index: int = 0) -> bool:
+        """
+        Validates a 2SA verification code for the selected trusted device.
+        """
+        if not self.api:
+            self.last_error = "No active iCloud session"
+            return False
+
+        devices = self.get_2sa_trusted_devices()
+        if not devices:
+            self.last_error = "No trusted devices available for 2SA"
+            logger.error(self.last_error)
+            return False
+
+        if device_index < 0 or device_index >= len(devices):
+            self.last_error = "Invalid trusted device selection"
+            logger.error(self.last_error)
+            return False
+
+        entered_code = (code or "").strip()
+        if not entered_code:
+            self.last_error = "No 2SA code provided"
+            return False
+
+        try:
+            verified = self.api.validate_verification_code(devices[device_index], entered_code)
+            if not verified:
+                self.last_error = "Failed to validate 2SA code"
+                logger.error(self.last_error)
+                return False
+
+            self.requires_2fa = False
+            self.requires_2sa = False
+            self.last_error = ""
+            logger.info("iCloud 2SA verification succeeded.")
+            return True
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"2SA verification failed: {self.last_error}")
             return False
 
     def _iter_photo_objects(self) -> Iterable[Any]:

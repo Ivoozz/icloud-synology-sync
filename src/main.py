@@ -47,9 +47,20 @@ def run_cli():
     if not icloud_api.login():
         if icloud_api.requires_2fa:
             print("Two-factor authentication required for iCloud.")
+            print("If no push appears, generate a code on a trusted Apple device:")
+            print("Settings > [your name] > Sign-In & Security > Get Verification Code")
             code = input("Enter the 2FA code from your Apple device: ").strip()
             if not icloud_api.verify_2fa(code):
                 logging.error("iCloud 2FA verification failed.")
+                sys.exit(1)
+        elif icloud_api.requires_2sa:
+            print("Two-step authentication required for iCloud.")
+            if not icloud_api.send_2sa_verification_code(device_index=0):
+                logging.error(f"Failed to send 2SA code: {icloud_api.last_error}")
+                sys.exit(1)
+            code = input("Enter the verification code received on your trusted device: ").strip()
+            if not icloud_api.verify_2sa(code, device_index=0):
+                logging.error("iCloud 2SA verification failed.")
                 sys.exit(1)
         else:
             logging.error("iCloud login failed.")

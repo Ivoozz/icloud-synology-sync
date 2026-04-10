@@ -36,15 +36,27 @@ class TestICloudPhotosAPI(unittest.TestCase):
     def test_login_requires_2fa(self, mock_pyicloud):
         mock_instance = MagicMock()
         mock_instance.requires_2fa = True
+        mock_instance.requires_2sa = False
         mock_pyicloud.return_value = mock_instance
         
         self.assertFalse(self.api.login())
         self.assertTrue(self.api.requires_2fa)
 
     @patch('src.icloud_api.PyiCloudService')
+    def test_login_requires_2sa(self, mock_pyicloud):
+        mock_instance = MagicMock()
+        mock_instance.requires_2fa = False
+        mock_instance.requires_2sa = True
+        mock_pyicloud.return_value = mock_instance
+
+        self.assertFalse(self.api.login())
+        self.assertTrue(self.api.requires_2sa)
+
+    @patch('src.icloud_api.PyiCloudService')
     def test_verify_2fa_success(self, mock_pyicloud):
         mock_instance = MagicMock()
         mock_instance.requires_2fa = True
+        mock_instance.requires_2sa = False
         mock_instance.validate_2fa_code.return_value = True
         mock_instance.is_trusted_session = False
         mock_instance.trust_session.return_value = True
@@ -58,12 +70,41 @@ class TestICloudPhotosAPI(unittest.TestCase):
     def test_verify_2fa_failure(self, mock_pyicloud):
         mock_instance = MagicMock()
         mock_instance.requires_2fa = True
+        mock_instance.requires_2sa = False
         mock_instance.validate_2fa_code.return_value = False
         mock_instance.is_trusted_session = True
         mock_pyicloud.return_value = mock_instance
 
         self.assertFalse(self.api.login())
         self.assertFalse(self.api.verify_2fa("111111"))
+
+    @patch('src.icloud_api.PyiCloudService')
+    def test_2sa_send_and_verify_success(self, mock_pyicloud):
+        mock_instance = MagicMock()
+        mock_instance.requires_2fa = False
+        mock_instance.requires_2sa = True
+        mock_instance.trusted_devices = [{"deviceName": "iPhone"}]
+        mock_instance.send_verification_code.return_value = True
+        mock_instance.validate_verification_code.return_value = True
+        mock_pyicloud.return_value = mock_instance
+
+        self.assertFalse(self.api.login())
+        self.assertTrue(self.api.send_2sa_verification_code(0))
+        self.assertTrue(self.api.verify_2sa("123456", 0))
+
+    @patch('src.icloud_api.PyiCloudService')
+    def test_2sa_verify_failure(self, mock_pyicloud):
+        mock_instance = MagicMock()
+        mock_instance.requires_2fa = False
+        mock_instance.requires_2sa = True
+        mock_instance.trusted_devices = [{"deviceName": "iPhone"}]
+        mock_instance.send_verification_code.return_value = True
+        mock_instance.validate_verification_code.return_value = False
+        mock_pyicloud.return_value = mock_instance
+
+        self.assertFalse(self.api.login())
+        self.assertTrue(self.api.send_2sa_verification_code(0))
+        self.assertFalse(self.api.verify_2sa("111111", 0))
 
     def test_list_photos_success(self):
         mock_api = MagicMock()

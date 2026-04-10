@@ -500,7 +500,8 @@ class SyncAppUI(ctk.CTk):
         def _show_dialog():
             result["code"] = simpledialog.askstring(
                 "Apple 2FA",
-                "Enter the 6-digit code from your trusted Apple device:",
+                "Enter the 6-digit Apple verification code. If no push appears, open iPhone Settings >"
+                " [your name] > Sign-In & Security > Get Verification Code.",
                 parent=self,
             )
             completed.set()
@@ -509,21 +510,43 @@ class SyncAppUI(ctk.CTk):
         completed.wait()
         return result["code"]
 
+    def _handle_icloud_auth_challenge(self, icloud_api: ICloudPhotosAPI) -> bool:
+        if icloud_api.requires_2fa:
+            for _ in range(3):
+                code = self._prompt_2fa_code()
+                if not code:
+                    return False
+                if icloud_api.verify_2fa(code):
+                    return True
+                logging.error(f"iCloud 2FA verification failed: {icloud_api.last_error}")
+            return False
+
+        if icloud_api.requires_2sa:
+            device_index = 0
+            if not icloud_api.send_2sa_verification_code(device_index=device_index):
+                logging.error(f"iCloud 2SA code request failed: {icloud_api.last_error}")
+                return False
+            for _ in range(3):
+                code = self._prompt_2fa_code()
+                if not code:
+                    return False
+                if icloud_api.verify_2sa(code, device_index=device_index):
+                    return True
+                logging.error(f"iCloud 2SA verification failed: {icloud_api.last_error}")
+            return False
+
+        return False
+
     def _run_sync(self):
         try:
             logging.info("Starting sync process...")
             
             icloud_api = ICloudPhotosAPI(self.apple_id.get(), self.apple_pass.get())
             if not icloud_api.login():
-                if icloud_api.requires_2fa:
-                    code = self._prompt_2fa_code()
-                    if not code:
-                        logging.error("iCloud login canceled: no 2FA code provided.")
-                        self.after(0, lambda: self._set_status("iCloud 2FA canceled", ok=False))
-                        return
-                    if not icloud_api.verify_2fa(code):
-                        logging.error("iCloud 2FA verification failed.")
-                        self.after(0, lambda: self._set_status("iCloud 2FA failed", ok=False))
+                if icloud_api.requires_2fa or icloud_api.requires_2sa:
+                    if not self._handle_icloud_auth_challenge(icloud_api):
+                        logging.error("iCloud authentication challenge failed.")
+                        self.after(0, lambda: self._set_status("iCloud verification failed", ok=False))
                         return
                 else:
                     logging.error("iCloud login failed.")
