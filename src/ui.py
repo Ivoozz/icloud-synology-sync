@@ -445,7 +445,9 @@ class SyncAppUI(ctk.CTk):
             return
         self.config_manager.data["nas_ip"] = self.nas_ip.get()
         self.config_manager.data["nas_user"] = self.nas_user.get()
-        self.config_manager.data["apple_id"] = self.apple_id.get()
+        normalized_apple_id = ICloudPhotosAPI._normalize_apple_id(self.apple_id.get())
+        normalized_apple_password = ICloudPhotosAPI._normalize_app_password(self.apple_pass.get())
+        self.config_manager.data["apple_id"] = normalized_apple_id
         try:
             self.config_manager.data["sync_interval_minutes"] = int(self.sync_interval.get())
         except ValueError:
@@ -469,7 +471,13 @@ class SyncAppUI(ctk.CTk):
         
         # Save passwords to keyring
         self.config_manager.set_credential("nas_password", self.nas_pass.get())
-        self.config_manager.set_credential("apple_password", self.apple_pass.get())
+        self.config_manager.set_credential("apple_password", normalized_apple_password)
+
+        # Keep UI fields aligned with normalized values after save.
+        self.apple_id.delete(0, "end")
+        self.apple_id.insert(0, normalized_apple_id)
+        self.apple_pass.delete(0, "end")
+        self.apple_pass.insert(0, normalized_apple_password)
         
         logging.info("Settings saved successfully.")
         self._set_status("Settings saved")

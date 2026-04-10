@@ -45,7 +45,7 @@ function Get-PortablyInstalledWixRoot {
     return $null
 }
 
-function Ensure-WixPortableTools {
+function Install-WixPortableTools {
     param([string]$BaseDir)
 
     $toolsRoot = Join-Path $BaseDir $WixVersion
@@ -116,7 +116,7 @@ try {
     if (-not $WixCommand -and (-not $CandleCommand -or -not $LightCommand)) {
         $wixCacheRoot = Join-Path $env:LOCALAPPDATA "iCloudSynoSync\wix"
         New-Item -ItemType Directory -Force -Path $wixCacheRoot | Out-Null
-        $PortableWixRoot = Ensure-WixPortableTools -BaseDir $wixCacheRoot
+        $PortableWixRoot = Install-WixPortableTools -BaseDir $wixCacheRoot
         $CandleCommand = Join-Path $PortableWixRoot "candle.exe"
         $LightCommand = Join-Path $PortableWixRoot "light.exe"
     }

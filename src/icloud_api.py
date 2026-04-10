@@ -9,9 +9,21 @@ class ICloudPhotosAPI:
     Wrapper for iCloud Photos API using pyicloud.
     """
     def __init__(self, apple_id: str, password: str):
-        self.apple_id = apple_id
-        self.password = password
+        self.apple_id = self._normalize_apple_id(apple_id)
+        self.password = self._normalize_app_password(password)
         self.api = None
+
+    @staticmethod
+    def _normalize_apple_id(apple_id: str) -> str:
+        return (apple_id or "").strip()
+
+    @staticmethod
+    def _normalize_app_password(password: str) -> str:
+        if not password:
+            return ""
+        # Apple app-specific passwords are often pasted with separators.
+        normalized = password.strip().replace(" ", "").replace("-", "")
+        return normalized.replace("–", "").replace("—", "")
 
     def login(self) -> bool:
         """
@@ -24,7 +36,16 @@ class ICloudPhotosAPI:
                 return False
             return True
         except Exception as e:
-            logger.error(f"iCloud login failed: {e}")
+            error_text = str(e)
+            lowered = error_text.lower()
+            if "password" in lowered or "invalid" in lowered or "authentication" in lowered:
+                logger.error(
+                    "iCloud login failed. Verify Apple ID and app-specific password. "
+                    "Tip: use a fresh app-specific password and paste it without spaces/hyphens. "
+                    f"Details: {error_text}"
+                )
+            else:
+                logger.error(f"iCloud login failed: {error_text}")
             return False
 
     def _iter_photo_objects(self) -> Iterable[Any]:

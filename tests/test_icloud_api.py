@@ -19,6 +19,20 @@ class TestICloudPhotosAPI(unittest.TestCase):
         self.assertEqual(self.api.api, mock_instance)
 
     @patch('src.icloud_api.PyiCloudService')
+    def test_login_normalizes_apple_credentials(self, mock_pyicloud):
+        mock_instance = MagicMock()
+        mock_instance.requires_2fa = False
+        mock_pyicloud.return_value = mock_instance
+
+        api = ICloudPhotosAPI(
+            apple_id="  test@example.com  ",
+            password=" abcd-efgh ijkl-mnop "
+        )
+
+        self.assertTrue(api.login())
+        mock_pyicloud.assert_called_once_with("test@example.com", "abcdefghijklmnop")
+
+    @patch('src.icloud_api.PyiCloudService')
     def test_login_requires_2fa(self, mock_pyicloud):
         mock_instance = MagicMock()
         mock_instance.requires_2fa = True
