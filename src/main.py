@@ -47,6 +47,12 @@ def run_cli():
     if not icloud_api.login():
         if icloud_api.requires_2fa:
             print("Two-factor authentication required for iCloud.")
+            devices = icloud_api.get_2sa_trusted_devices()
+            if devices:
+                if icloud_api.send_2sa_verification_code(device_index=0):
+                    print("Requested a verification code on your trusted Apple device.")
+                else:
+                    print("Could not actively request a verification code; you can still enter a manual code.")
             print("If no push appears, generate a code on a trusted Apple device:")
             print("Settings > [your name] > Sign-In & Security > Get Verification Code")
             code = input("Enter the 2FA code from your Apple device: ").strip()

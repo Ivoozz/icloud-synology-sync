@@ -512,6 +512,15 @@ class SyncAppUI(ctk.CTk):
 
     def _handle_icloud_auth_challenge(self, icloud_api: ICloudPhotosAPI) -> bool:
         if icloud_api.requires_2fa:
+            devices = icloud_api.get_2sa_trusted_devices()
+            if devices:
+                if icloud_api.send_2sa_verification_code(device_index=0):
+                    logging.info("Requested Apple verification code on trusted device.")
+                else:
+                    logging.warning(
+                        "Could not actively request Apple verification code. "
+                        f"You can still enter a manually generated code. Details: {icloud_api.last_error}"
+                    )
             for _ in range(3):
                 code = self._prompt_2fa_code()
                 if not code:
