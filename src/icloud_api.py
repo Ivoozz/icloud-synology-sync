@@ -14,6 +14,8 @@ class ICloudPhotosAPI:
         self.api = None
         self.requires_2fa = False
         self.requires_2sa = False
+        self.two_factor_delivery_method = "unknown"
+        self.two_factor_delivery_notice = ""
         self.last_error = ""
 
     @staticmethod
@@ -36,6 +38,8 @@ class ICloudPhotosAPI:
             self.api = PyiCloudService(self.apple_id, self.password)
             self.requires_2fa = self._is_true(getattr(self.api, "requires_2fa", False))
             self.requires_2sa = self._is_true(getattr(self.api, "requires_2sa", False))
+            self.two_factor_delivery_method = str(getattr(self.api, "two_factor_delivery_method", "unknown"))
+            self.two_factor_delivery_notice = str(getattr(self.api, "two_factor_delivery_notice", "") or "")
             if self.requires_2fa:
                 self.last_error = "Two-factor authentication required"
                 logger.warning("Two-factor authentication required.")
@@ -87,12 +91,45 @@ class ICloudPhotosAPI:
 
             self.requires_2fa = False
             self.requires_2sa = False
+            self.two_factor_delivery_method = str(getattr(self.api, "two_factor_delivery_method", "unknown"))
+            self.two_factor_delivery_notice = str(getattr(self.api, "two_factor_delivery_notice", "") or "")
             self.last_error = ""
             logger.info("iCloud 2FA verification succeeded.")
             return True
         except Exception as e:
             self.last_error = str(e)
             logger.error(f"2FA verification failed: {self.last_error}")
+            return False
+
+    def request_2fa_code(self) -> bool:
+        """
+        Requests Apple to deliver a verification code using the active route.
+        """
+        if not self.api:
+            self.last_error = "No active iCloud session"
+            return False
+
+        try:
+            requested = self.api.request_2fa_code()
+            self.two_factor_delivery_method = str(getattr(self.api, "two_factor_delivery_method", "unknown"))
+            self.two_factor_delivery_notice = str(getattr(self.api, "two_factor_delivery_notice", "") or "")
+            if not requested:
+                self.last_error = (
+                    "Apple did not accept an active code request for this session. "
+                    f"Delivery method reported: {self.two_factor_delivery_method}"
+                )
+                logger.warning(self.last_error)
+                return False
+
+            self.last_error = ""
+            logger.info(
+                "Apple verification code requested successfully "
+                f"(delivery={self.two_factor_delivery_method})."
+            )
+            return True
+        except Exception as e:
+            self.last_error = str(e)
+            logger.error(f"Failed to request Apple 2FA code: {self.last_error}")
             return False
 
     def get_2sa_trusted_devices(self) -> List[Dict[str, Any]]:

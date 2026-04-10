@@ -83,11 +83,16 @@ class TestICloudPhotosAPI(unittest.TestCase):
         mock_instance = MagicMock()
         mock_instance.requires_2fa = True
         mock_instance.requires_2sa = False
+        mock_instance.two_factor_delivery_method = "trusted_device"
+        mock_instance.two_factor_delivery_notice = ""
         mock_instance.trusted_devices = [{"deviceName": "iPhone"}]
         mock_instance.send_verification_code.return_value = True
+        mock_instance.request_2fa_code.return_value = True
         mock_pyicloud.return_value = mock_instance
 
         self.assertFalse(self.api.login())
+        self.assertTrue(self.api.request_2fa_code())
+        self.assertEqual(self.api.two_factor_delivery_method, "trusted_device")
         self.assertTrue(self.api.send_2sa_verification_code(0))
 
     @patch('src.icloud_api.PyiCloudService')

@@ -1,5 +1,5 @@
 APP_NAME = "iCloud to Synology Sync"
-APP_VERSION = "1.0.5"
+APP_VERSION = "1.0.6"
 
 
 def to_installer_version(version: str) -> str:

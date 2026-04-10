@@ -512,10 +512,17 @@ class SyncAppUI(ctk.CTk):
 
     def _handle_icloud_auth_challenge(self, icloud_api: ICloudPhotosAPI) -> bool:
         if icloud_api.requires_2fa:
-            devices = icloud_api.get_2sa_trusted_devices()
-            if devices:
-                if icloud_api.send_2sa_verification_code(device_index=0):
-                    logging.info("Requested Apple verification code on trusted device.")
+            if icloud_api.request_2fa_code():
+                delivery = icloud_api.two_factor_delivery_method
+                notice = icloud_api.two_factor_delivery_notice
+                logging.info(f"Apple 2FA code requested (delivery={delivery}).")
+                if notice:
+                    logging.info(f"Apple 2FA notice: {notice}")
+            else:
+                # Some accounts/sessions may not support active request_2fa_code; keep fallback.
+                devices = icloud_api.get_2sa_trusted_devices()
+                if devices and icloud_api.send_2sa_verification_code(device_index=0):
+                    logging.info("Requested Apple verification code via trusted-device fallback.")
                 else:
                     logging.warning(
                         "Could not actively request Apple verification code. "
